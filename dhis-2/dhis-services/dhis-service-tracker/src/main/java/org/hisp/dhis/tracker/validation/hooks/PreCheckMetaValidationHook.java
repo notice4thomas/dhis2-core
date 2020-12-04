@@ -71,7 +71,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class PreCheckMetaValidationHook
-    extends AbstractTrackerDtoValidationHook
+        extends AbstractTrackerDtoValidationHook
 {
     @Override
     public void validateTrackedEntity( ValidationErrorReporter reporter, TrackedEntity tei )
@@ -134,7 +134,7 @@ public class PreCheckMetaValidationHook
         if ( program != null )
         {
             addErrorIf( () -> program.isRegistration() && StringUtils.isEmpty( event.getEnrollment() ), reporter, E1033,
-                event.getEvent() );
+                    event.getEvent() );
         }
         validateEventProgramAndProgramStage( reporter, event, context, strategy, bundle, program, programStage );
         validateDataElementForDataValues( reporter, event, context );
@@ -153,24 +153,24 @@ public class PreCheckMetaValidationHook
     }
 
     private void validateDataElementForDataValues( ValidationErrorReporter reporter, Event event,
-        TrackerImportValidationContext context )
+                                                   TrackerImportValidationContext context )
     {
         event.getDataValues()
-            .stream()
-            .map( DataValue::getDataElement )
-            .forEach( de -> {
-                DataElement dataElement = context.getBundle().getPreheat().get( TrackerIdScheme.UID, DataElement.class,
-                    de );
-                if ( dataElement == null )
-                {
-                    addError( reporter, E1087, event.getEvent(), de );
-                }
-            } );
+                .stream()
+                .map( DataValue::getDataElement )
+                .forEach( de -> {
+                    DataElement dataElement = context.getBundle().getPreheat().get( TrackerIdScheme.UID, DataElement.class,
+                            de );
+                    if ( dataElement == null )
+                    {
+                        addError( reporter, E1087, event.getEvent(), de );
+                    }
+                } );
     }
 
     private void validateEventProgramAndProgramStage( ValidationErrorReporter reporter, Event event,
-        TrackerImportValidationContext context, TrackerImportStrategy strategy, TrackerBundle bundle, Program program,
-        ProgramStage programStage )
+                                                      TrackerImportValidationContext context, TrackerImportStrategy strategy, TrackerBundle bundle, Program program,
+                                                      ProgramStage programStage )
     {
         if ( program == null && programStage == null )
         {
@@ -192,7 +192,7 @@ public class PreCheckMetaValidationHook
             addErrorIfNull( program.getProgramStageByStage( 1 ), reporter, E1035, event );
         }
 
-        if ( program != null && programStage != null && !program.equals( programStage.getProgram() ) )
+        if ( program != null && programStage != null && !program.getUid().equals( programStage.getProgram().getUid() ) )
         {
             addError( reporter, E1089, event, programStage, program );
         }
@@ -204,7 +204,7 @@ public class PreCheckMetaValidationHook
     }
 
     private void validateNotChangingProgram( ValidationErrorReporter reporter, Event event,
-        TrackerImportValidationContext context, Program program )
+                                             TrackerImportValidationContext context, Program program )
     {
         ProgramStageInstance psi = context.getProgramStageInstance( event.getEvent() );
         Program existingProgram = psi.getProgramStage().getProgram();
@@ -212,8 +212,8 @@ public class PreCheckMetaValidationHook
         if ( !existingProgram.equals( program ) )
         {
             reporter.addError( newReport( TrackerErrorCode.E1110 )
-                .addArg( psi )
-                .addArg( existingProgram ) );
+                    .addArg( psi )
+                    .addArg( existingProgram ) );
         }
     }
 

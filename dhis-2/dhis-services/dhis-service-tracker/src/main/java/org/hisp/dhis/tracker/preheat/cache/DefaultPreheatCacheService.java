@@ -1,4 +1,4 @@
-package org.hisp.dhis.tracker.preheat.supplier.classStrategy;
+package org.hisp.dhis.tracker.preheat.cache;
 
 /*
  * Copyright (c) 2004-2020, University of Oslo
@@ -28,35 +28,61 @@ package org.hisp.dhis.tracker.preheat.supplier.classStrategy;
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
-import org.hisp.dhis.common.IdentifiableObjectManager;
-import org.hisp.dhis.query.QueryService;
-import org.hisp.dhis.schema.Schema;
-import org.hisp.dhis.schema.SchemaService;
-import org.hisp.dhis.tracker.TrackerIdentifier;
-import org.hisp.dhis.tracker.preheat.TrackerPreheat;
-import org.hisp.dhis.tracker.preheat.cache.PreheatCacheService;
-import org.hisp.dhis.tracker.preheat.mappers.CopyMapper;
-import org.springframework.stereotype.Component;
+import org.cache2k.Cache;
+import org.cache2k.Cache2kBuilder;
+import org.hisp.dhis.common.IdentifiableObject;
+import org.springframework.stereotype.Service;
 
 /**
  * @author Luciano Fiandesio
  */
-@Component
-@StrategyFor( value = GenericStrategy.class, mapper = CopyMapper.class )
-public class GenericStrategy extends AbstractSchemaStrategy
+@Service
+public class DefaultPreheatCacheService implements PreheatCacheService
 {
-    public GenericStrategy( SchemaService schemaService, QueryService queryService,
-        IdentifiableObjectManager manager, PreheatCacheService cacheService )
+    // TODO add Tracker Cache enable/disabled global setting
+
+    private static Map<String, Cache<String, Object>> cache = new HashMap<>();
+
+    @Override
+    public <T extends IdentifiableObject> T get( String cacheKey, String id )
     {
-        super( schemaService, queryService, manager, cacheService );
+        if ( cache.containsKey( cacheKey ) )
+        {
+            return (T) this.cache.get( cacheKey ).get( id );
+        }
+
+        return null;
     }
 
-    public void add( Class<?> klazz, List<List<String>> splitList, TrackerPreheat preheat )
+    @Override
+    public <T extends IdentifiableObject> void put( String cacheKey, String uid, T o, int cacheTTL )
     {
-        Schema schema = schemaService.getDynamicSchema( klazz );
-        queryForIdentifiableObjects( preheat, schema, TrackerIdentifier.UID, splitList,
-            getClass().getAnnotation( StrategyFor.class ).mapper() );
+        if ( o == null )
+        {
+            return;
+        }
+        if ( cache.containsKey( cacheKey ) )
+        {
+            cache.get( cacheKey ).put( uid, o );
+        }
+        else
+        {
+            Cache<String, Object> c = new Cache2kBuilder<String, Object>()
+            {
+            }
+                .expireAfterWrite( cacheTTL, TimeUnit.MINUTES ) // expire/refresh after 5 minutes
+                .name( cacheKey )
+                .permitNullValues( false )
+                .resilienceDuration( 30, TimeUnit.SECONDS ) // cope with at most 30 seconds
+                // outage before propagating
+                // exceptions
+                .build();
+            c.put( uid, o );
+            cache.put( cacheKey, c );
+        }
     }
 }

@@ -177,6 +177,7 @@ public class EventTrackerConverterService
     private ProgramStageInstance from( TrackerPreheat preheat, Event event, ProgramStageInstance programStageInstance )
     {
         ProgramStage programStage = preheat.get( TrackerIdScheme.UID, ProgramStage.class, event.getProgramStage() );
+        Program program = preheat.get( TrackerIdScheme.UID, Program.class, event.getProgram() );
         OrganisationUnit organisationUnit = preheat
             .get( TrackerIdScheme.UID, OrganisationUnit.class, event.getOrgUnit() );
 
@@ -191,7 +192,7 @@ public class EventTrackerConverterService
             programStageInstance.setLastUpdated( now );
             programStageInstance.setLastUpdatedAtClient( now );
             programStageInstance.setProgramInstance(
-                getProgramInstance( preheat, TrackerIdScheme.UID, event.getEnrollment(), programStage.getProgram() ) );
+                getProgramInstance( preheat, TrackerIdScheme.UID, event.getEnrollment(), program ) );
         }
 
         programStageInstance.setProgramStage( programStage );

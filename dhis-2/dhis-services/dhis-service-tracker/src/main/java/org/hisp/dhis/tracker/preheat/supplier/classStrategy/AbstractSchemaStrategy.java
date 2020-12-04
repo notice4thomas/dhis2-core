@@ -28,6 +28,7 @@ package org.hisp.dhis.tracker.preheat.supplier.classStrategy;
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -45,8 +46,10 @@ import org.hisp.dhis.tracker.TrackerIdScheme;
 import org.hisp.dhis.tracker.TrackerIdentifier;
 import org.hisp.dhis.tracker.TrackerImportParams;
 import org.hisp.dhis.tracker.preheat.TrackerPreheat;
+import org.hisp.dhis.tracker.preheat.cache.PreheatCacheService;
 import org.hisp.dhis.tracker.preheat.mappers.CopyMapper;
 import org.hisp.dhis.tracker.preheat.mappers.PreheatMapper;
+import org.hisp.dhis.user.User;
 import org.mapstruct.factory.Mappers;
 
 /**
@@ -63,12 +66,15 @@ public abstract class AbstractSchemaStrategy implements ClassBasedSupplierStrate
 
     private final IdentifiableObjectManager manager;
 
+    private final PreheatCacheService cache;
+
     public AbstractSchemaStrategy( SchemaService schemaService, QueryService queryService,
-        IdentifiableObjectManager manager )
+        IdentifiableObjectManager manager, PreheatCacheService preheatCacheService )
     {
         this.schemaService = schemaService;
         this.queryService = queryService;
         this.manager = manager;
+        this.cache = preheatCacheService;
     }
 
     @Override
@@ -83,6 +89,16 @@ public abstract class AbstractSchemaStrategy implements ClassBasedSupplierStrate
     private Class<? extends PreheatMapper> mapper()
     {
         return getClass().getAnnotation( StrategyFor.class ).mapper();
+    }
+
+    private boolean canCache()
+    {
+        return getClass().getAnnotation( StrategyFor.class ).cache();
+    }
+
+    private int getCacheTTL()
+    {
+        return getClass().getAnnotation( StrategyFor.class ).ttl();
     }
 
     protected Class<?> getSchemaClass()
@@ -109,24 +125,99 @@ public abstract class AbstractSchemaStrategy implements ClassBasedSupplierStrate
             }
             else
             {
-                Query query = Query.from( schema );
-                query.setUser( preheat.getUser() );
-                query.add( generateRestrictionFromIdentifiers( idScheme, ids ) );
-                query.setDefaults( Defaults.INCLUDE );
-                if ( mapper.isAssignableFrom( CopyMapper.class ) )
-                {
-                    objects = queryService.query( query );
-                }
-                else
-                {
-                    objects = queryService.query( query ).stream().map( o -> Mappers.getMapper( mapper ).map( o ) )
-                        .map( IdentifiableObject.class::cast ).collect( Collectors.toList() );
-                }
-
+                objects = cacheAwareFetch( preheat.getUser(), schema, identifier, ids, mapper );
             }
 
             preheat.put( identifier, objects );
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends IdentifiableObject> List<T> cacheAwareFetch( User user, Schema schema, TrackerIdentifier identifier, List<String> ids, Class<? extends PreheatMapper> mapper )
+    {
+        TrackerIdScheme idScheme = identifier.getIdScheme();
+        
+        List<T> objects;
+        final String cacheKey = schema.getKlass().getSimpleName();
+        
+        if ( canCache() ) // check if this strategy requires caching
+        {
+            List<String> toRemove = new ArrayList<>();
+            List<T> cachedObjects = new ArrayList<>();
+
+            for ( String id : ids )
+            {
+                // is the object reference by the given id in cache?
+                T o = cache.get( cacheKey, id );
+                if ( o != null )
+                {
+                    // add to objects to set into preheat
+                    cachedObjects.add( o );
+                    // remove this id from list of id to fetch from db
+                    toRemove.add( id );
+                }
+            }
+            // is there any object which was not found in cache?
+            if ( ids.size() > toRemove.size() )
+            {
+                // remove from the list of ids the ids found in cache
+                ids.removeAll( toRemove );
+                
+                // execute the query
+                objects = (List<T>) map( queryService.query( buildQuery( schema, user, idScheme, ids ) ), mapper );
+
+                // put objects in query based on given scheme
+                if ( idScheme.equals( TrackerIdScheme.UID ) )
+                {
+                    objects.forEach( o -> cache.put( cacheKey, o.getUid(), o, getCacheTTL() ) );
+                }
+                else if ( idScheme.equals( TrackerIdScheme.CODE ) )
+                {
+                    objects.forEach( o -> cache.put( cacheKey, o.getCode(), o, getCacheTTL() ) );
+                }
+                else if ( idScheme.equals( TrackerIdScheme.ATTRIBUTE ) )
+                {
+                    // TODO
+                }
+                // add back the cached objects to the final list
+                objects.addAll( cachedObjects );
+            }
+            else
+            {
+                objects = cachedObjects;
+            }
+        }
+        else
+        {
+            objects = (List<T>) map( queryService.query( buildQuery( schema, user, idScheme, ids ) ), mapper );
+        }
+            
+        return objects;
+    }
+    
+    private <T extends IdentifiableObject> List<T> map( List<T> objects, Class<? extends PreheatMapper> mapper )
+    {
+
+        if ( mapper.isAssignableFrom( CopyMapper.class ) )
+        {
+            return objects;
+        }
+        else
+        {
+            return (List<T>)objects.stream().map( o -> Mappers.getMapper( mapper ).map( o ) )
+                .map( IdentifiableObject.class::cast ).collect( Collectors.toList() );
+        }
+    }
+    
+
+    private Query buildQuery( Schema schema, User user, TrackerIdScheme idScheme, List<String> ids )
+    {
+        Query query = Query.from( schema );
+        query.setUser( user );
+        query.add( generateRestrictionFromIdentifiers( idScheme, ids ) );
+        query.setDefaults( Defaults.INCLUDE );
+
+        return query;
     }
 
     private Restriction generateRestrictionFromIdentifiers( TrackerIdScheme idScheme, List<String> ids )
@@ -140,5 +231,4 @@ public abstract class AbstractSchemaStrategy implements ClassBasedSupplierStrate
             return Restrictions.in( "id", ids );
         }
     }
-
 }

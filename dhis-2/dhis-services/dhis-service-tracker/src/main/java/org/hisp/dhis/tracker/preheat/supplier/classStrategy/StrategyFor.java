@@ -48,4 +48,6 @@ public @interface StrategyFor
 {
     Class<?> value();
     Class<? extends PreheatMapper> mapper();
+    boolean cache() default false;
+    int ttl() default 5;
 }
