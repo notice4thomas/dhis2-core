@@ -50,7 +50,6 @@ public interface OrganisationUnitMapper
     @Mapping( target = "externalAccess" )
     @Mapping( target = "userGroupAccesses" )
     @Mapping( target = "userAccesses" )
-    @Mapping( target = "programs" )
     @Mapping( target = "parent", qualifiedByName = "parentMapper" )
     OrganisationUnit map( OrganisationUnit organisationUnit );
 
